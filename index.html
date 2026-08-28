@@ -452,6 +452,128 @@
   }
 
   footer .meta-item span { color: var(--text-dim); }
+
+  .harvest-form {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    max-width: 560px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+  }
+
+  .field { display: flex; flex-direction: column; gap: 6px; }
+
+  .field-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+  }
+
+  .field label {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--text-dim);
+  }
+
+  .field label .req { color: var(--accent); }
+
+  .field-hint {
+    margin: 0;
+    font-size: 12px;
+    color: var(--text-faint);
+  }
+
+  .field input {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.12s ease;
+  }
+
+  .field input:focus-visible {
+    border-color: var(--accent);
+  }
+
+  #harvest-submit { align-self: flex-start; }
+
+  #harvest-submit:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .harvest-result {
+    margin-top: 20px;
+    max-width: 560px;
+  }
+
+  .result-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+
+  .stat-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    text-align: center;
+  }
+
+  .stat-card .stat-value {
+    font-family: var(--mono);
+    font-size: 28px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .stat-card.gardes .stat-value { color: var(--good); }
+  .stat-card.rejetes .stat-value { color: var(--bad); }
+
+  .stat-card .stat-label {
+    font-size: 12px;
+    color: var(--text-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-top: 4px;
+  }
+
+  .harvest-error {
+    background: #f8717111;
+    border: 1px solid #f8717144;
+    border-radius: var(--radius);
+    padding: 16px;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--bad);
+  }
+
+  .spinner {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid #12100e55;
+    border-top-color: #12100e;
+    display: inline-block;
+    vertical-align: -2px;
+    margin-right: 8px;
+    animation: spin 0.7s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .spinner { animation: none; }
+  }
 </style>
 </head>
 <body>
@@ -463,6 +585,7 @@
       Reddit Harvest
     </a>
     <nav class="links">
+      <a href="#essayer">Essayer</a>
       <a href="#comment">Comment ça marche</a>
       <a href="#architecture">Architecture</a>
       <a href="#qualite">Score qualité</a>
@@ -484,9 +607,48 @@
         puis écrit les résultats dans Supabase.
       </p>
       <div class="cta-row">
-        <a href="#api" class="btn btn-primary">Voir l'appel API</a>
+        <a href="#essayer" class="btn btn-primary">Lancer une récolte</a>
         <a href="#architecture" class="btn btn-ghost">Voir l'architecture</a>
       </div>
+    </div>
+  </section>
+
+  <section id="essayer">
+    <div class="wrap">
+      <p class="eyebrow">Essayer</p>
+      <h2>Lancer une récolte maintenant</h2>
+      <p class="section-lead">
+        Appelle la vraie route <code style="font-family:var(--mono)">/api/harvest</code> de ce déploiement —
+        les résultats gardés sont écrits dans <code style="font-family:var(--mono)">reddit_signals</code>.
+      </p>
+
+      <form id="harvest-form" class="harvest-form">
+        <div class="field">
+          <label for="f-subreddits">Subreddits <span class="req">*</span></label>
+          <input id="f-subreddits" name="subreddits" type="text" placeholder="startups, SaaS, Entrepreneur" required>
+          <p class="field-hint">Séparés par des virgules, sans le préfixe r/.</p>
+        </div>
+        <div class="field">
+          <label for="f-keywords">Mots-clés</label>
+          <input id="f-keywords" name="keywords" type="text" placeholder="outil de veille, trop cher, je cherche un">
+          <p class="field-hint">Optionnel — laisse vide pour ne filtrer que par subreddit.</p>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="f-days">Fenêtre (jours)</label>
+            <input id="f-days" name="days" type="number" min="1" max="365" value="30">
+          </div>
+          <div class="field">
+            <label for="f-limit">Limite / requête</label>
+            <input id="f-limit" name="limit" type="number" min="1" max="100" value="100">
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary" id="harvest-submit">
+          <span id="harvest-submit-label">Lancer la récolte</span>
+        </button>
+      </form>
+
+      <div id="harvest-result" class="harvest-result" hidden></div>
     </div>
   </section>
 
@@ -671,6 +833,74 @@
     <div class="meta-item">repo <span>bobsd84000-pixel/-reddit-harvest</span></div>
   </div>
 </footer>
+
+<script>
+  (function () {
+    const form = document.getElementById('harvest-form');
+    const submitBtn = document.getElementById('harvest-submit');
+    const submitLabel = document.getElementById('harvest-submit-label');
+    const result = document.getElementById('harvest-result');
+
+    function toList(value) {
+      return value
+        .split(',')
+        .map(function (s) { return s.trim(); })
+        .filter(Boolean);
+    }
+
+    function renderStats(data) {
+      result.hidden = false;
+      result.innerHTML =
+        '<div class="result-stats">' +
+          '<div class="stat-card"><div class="stat-value">' + data.recoltes + '</div><div class="stat-label">Récoltés</div></div>' +
+          '<div class="stat-card gardes"><div class="stat-value">' + data.gardes + '</div><div class="stat-label">Gardés</div></div>' +
+          '<div class="stat-card rejetes"><div class="stat-value">' + data.rejetes + '</div><div class="stat-label">Rejetés</div></div>' +
+        '</div>' +
+        '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
+    }
+
+    function renderError(message) {
+      result.hidden = false;
+      result.innerHTML = '<div class="harvest-error">Erreur : ' + message + '</div>';
+    }
+
+    form.addEventListener('submit', async function (e) {
+      e.preventDefault();
+
+      const subreddits = toList(document.getElementById('f-subreddits').value);
+      if (!subreddits.length) {
+        renderError('au moins un subreddit est requis.');
+        return;
+      }
+      const keywords = toList(document.getElementById('f-keywords').value);
+      const days = Number(document.getElementById('f-days').value) || 30;
+      const limit = Number(document.getElementById('f-limit').value) || 100;
+
+      submitBtn.disabled = true;
+      submitLabel.innerHTML = '<span class="spinner"></span>Récolte en cours…';
+      result.hidden = true;
+
+      try {
+        const res = await fetch('/api/harvest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ subreddits: subreddits, keywords: keywords, days: days, limit: limit })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          renderError(data.erreur || ('HTTP ' + res.status));
+        } else {
+          renderStats(data);
+        }
+      } catch (err) {
+        renderError(err.message);
+      } finally {
+        submitBtn.disabled = false;
+        submitLabel.textContent = 'Lancer la récolte';
+      }
+    });
+  })();
+</script>
 
 </body>
 </html>
