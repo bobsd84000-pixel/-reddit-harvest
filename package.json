@@ -1,0 +1,10 @@
+{
+  "name": "reddit-harvest",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Proxy Vercel qui recolte des signaux Reddit et les injecte dans le pipeline BulkDirect (Supabase).",
+  "type": "module",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0"
+  }
+}
