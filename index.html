@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reddit Harvest — Proxy signaux Reddit pour BulkDirect</title>
+<meta name="description" content="Route Vercel qui contourne le mur CORS de Reddit, authentifie via OAuth, score la qualité des posts et alimente le pipeline BulkDirect via Supabase.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0b0c0f;
+    --bg-raised: #131519;
+    --bg-card: #16181d;
+    --border: #23262d;
+    --text: #eef0f3;
+    --text-dim: #9aa0ab;
+    --text-faint: #5c626e;
+    --accent: #ff6b35;
+    --accent-dim: #ff6b3522;
+    --good: #4ade80;
+    --bad: #f87171;
+    --radius: 10px;
+    --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: inherit; }
+
+  .wrap {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  header.top {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: rgba(11, 12, 15, 0.85);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 60px;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    text-decoration: none;
+    font-size: 16px;
+  }
+
+  .brand .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+    background: var(--accent);
+    box-shadow: 0 0 0 4px var(--accent-dim);
+  }
+
+  nav.links {
+    display: flex;
+    gap: 28px;
+    font-size: 14px;
+    color: var(--text-dim);
+  }
+
+  nav.links a {
+    text-decoration: none;
+    transition: color 0.15s ease;
+  }
+
+  nav.links a:hover { color: var(--text); }
+
+  @media (max-width: 640px) {
+    nav.links { display: none; }
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 12px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-dim);
+    background: var(--bg-raised);
+  }
+
+  .badge .pulse {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--good);
+    box-shadow: 0 0 0 3px #4ade8022;
+  }
+
+  .hero {
+    padding: 96px 0 72px;
+    text-align: center;
+  }
+
+  .hero h1 {
+    font-size: clamp(34px, 6vw, 58px);
+    line-height: 1.05;
+    letter-spacing: -0.03em;
+    margin: 24px 0 20px;
+    font-weight: 800;
+  }
+
+  .hero h1 span { color: var(--accent); }
+
+  .hero p.lead {
+    max-width: 620px;
+    margin: 0 auto;
+    color: var(--text-dim);
+    font-size: 17px;
+  }
+
+  .cta-row {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    margin-top: 36px;
+    flex-wrap: wrap;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 22px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 14px;
+    text-decoration: none;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: transform 0.12s ease, opacity 0.12s ease;
+  }
+
+  .btn:active { transform: scale(0.97); }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #12100e;
+  }
+
+  .btn-primary:hover { opacity: 0.92; }
+
+  .btn-ghost {
+    background: transparent;
+    border-color: var(--border);
+    color: var(--text);
+  }
+
+  .btn-ghost:hover { border-color: #3a3f49; }
+
+  section { padding: 64px 0; border-top: 1px solid var(--border); }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--accent);
+    margin: 0 0 10px;
+  }
+
+  h2 {
+    font-size: clamp(24px, 4vw, 32px);
+    letter-spacing: -0.02em;
+    margin: 0 0 14px;
+  }
+
+  .section-lead {
+    color: var(--text-dim);
+    max-width: 640px;
+    margin: 0 0 40px;
+  }
+
+  .problem-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+
+  @media (max-width: 720px) {
+    .problem-grid { grid-template-columns: 1fr; }
+  }
+
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 22px;
+  }
+
+  .card h3 {
+    margin: 0 0 8px;
+    font-size: 15px;
+  }
+
+  .card p {
+    margin: 0;
+    color: var(--text-dim);
+    font-size: 14px;
+  }
+
+  .flow {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  .flow-step {
+    display: grid;
+    grid-template-columns: 34px 1fr auto;
+    align-items: center;
+    gap: 14px;
+    padding: 18px 20px;
+    border-bottom: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 13.5px;
+  }
+
+  .flow-step:last-child { border-bottom: none; }
+
+  .flow-num {
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    background: var(--accent-dim);
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 12px;
+  }
+
+  .flow-step .desc { color: var(--text-dim); font-family: var(--sans); font-size: 13px; }
+
+  .flow-tag {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    color: var(--text-faint);
+    white-space: nowrap;
+  }
+
+  table.agents {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+
+  table.agents th, table.agents td {
+    text-align: left;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  table.agents th {
+    color: var(--text-faint);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+  }
+
+  table.agents tr:last-child td { border-bottom: none; }
+
+  .agent-name {
+    font-family: var(--mono);
+    color: var(--accent);
+    white-space: nowrap;
+  }
+
+  .quality-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    align-items: start;
+  }
+
+  @media (max-width: 720px) {
+    .quality-row { grid-template-columns: 1fr; }
+  }
+
+  .quality-bars .bar-item {
+    margin-bottom: 16px;
+  }
+
+  .bar-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+    font-family: var(--mono);
+  }
+
+  .bar-track {
+    height: 8px;
+    background: var(--bg-raised);
+    border-radius: 999px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+
+  .bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), #ffb27a);
+    border-radius: 999px;
+  }
+
+  .threshold-note {
+    margin-top: 18px;
+    padding: 14px 16px;
+    background: var(--bg-raised);
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+
+  .threshold-note strong { color: var(--good); }
+
+  pre {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.7;
+    color: #d7dae0;
+  }
+
+  pre .k { color: #7ec8e3; }
+  pre .s { color: #a3d977; }
+  pre .c { color: var(--text-faint); }
+
+  .code-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .code-tab {
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+  }
+
+  .limits-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+  }
+
+  .limits-table th, .limits-table td {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .limits-table th {
+    color: var(--text-faint);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .limits-table code {
+    font-family: var(--mono);
+    color: var(--bad);
+    font-size: 12.5px;
+  }
+
+  .dont-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 10px;
+  }
+
+  .dont-list li {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    font-size: 14px;
+    color: var(--text-dim);
+  }
+
+  .dont-list .x {
+    color: var(--bad);
+    font-family: var(--mono);
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+
+  footer {
+    padding: 40px 0 60px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--text-faint);
+  }
+
+  footer .meta-item span { color: var(--text-dim); }
+
+  .harvest-form {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    max-width: 560px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+  }
+
+  .field { display: flex; flex-direction: column; gap: 6px; }
+
+  .field-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+  }
+
+  .field label {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--text-dim);
+  }
+
+  .field label .req { color: var(--accent); }
+
+  .field-hint {
+    margin: 0;
+    font-size: 12px;
+    color: var(--text-faint);
+  }
+
+  .field input {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.12s ease;
+  }
+
+  .field input:focus-visible {
+    border-color: var(--accent);
+  }
+
+  #harvest-submit { align-self: flex-start; }
+
+  #harvest-submit:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .harvest-result {
+    margin-top: 20px;
+    max-width: 560px;
+  }
+
+  .result-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+
+  .stat-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    text-align: center;
+  }
+
+  .stat-card .stat-value {
+    font-family: var(--mono);
+    font-size: 28px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .stat-card.gardes .stat-value { color: var(--good); }
+  .stat-card.rejetes .stat-value { color: var(--bad); }
+
+  .stat-card .stat-label {
+    font-size: 12px;
+    color: var(--text-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-top: 4px;
+  }
+
+  .harvest-error {
+    background: #f8717111;
+    border: 1px solid #f8717144;
+    border-radius: var(--radius);
+    padding: 16px;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--bad);
+  }
+
+  .spinner {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid #12100e55;
+    border-top-color: #12100e;
+    display: inline-block;
+    vertical-align: -2px;
+    margin-right: 8px;
+    animation: spin 0.7s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .spinner { animation: none; }
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap topbar">
+    <a href="#top" class="brand">
+      <span class="dot"></span>
+      Reddit Harvest
+    </a>
+    <nav class="links">
+      <a href="#essayer">Essayer</a>
+      <a href="#comment">Comment ça marche</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#qualite">Score qualité</a>
+      <a href="#api">API</a>
+      <a href="#limites">Limites</a>
+    </nav>
+    <span class="badge"><span class="pulse"></span>reddit_signals</span>
+  </div>
+</header>
+
+<main id="top">
+  <section class="hero" style="border-top:none;">
+    <div class="wrap">
+      <span class="badge">Route Vercel · OAuth Reddit · Supabase</span>
+      <h1>Les signaux Reddit,<br>sans le <span>mur CORS</span>.</h1>
+      <p class="lead">
+        Reddit Harvest est le proxy qui alimente le pipeline BulkDirect : votre navigateur n'appelle jamais
+        Reddit directement — une route Vercel gère l'OAuth, le rate limit et le scoring qualité,
+        puis écrit les résultats dans Supabase.
+      </p>
+      <div class="cta-row">
+        <a href="#essayer" class="btn btn-primary">Lancer une récolte</a>
+        <a href="#architecture" class="btn btn-ghost">Voir l'architecture</a>
+      </div>
+    </div>
+  </section>
+
+  <section id="essayer">
+    <div class="wrap">
+      <p class="eyebrow">Essayer</p>
+      <h2>Lancer une récolte maintenant</h2>
+      <p class="section-lead">
+        Appelle la vraie route <code style="font-family:var(--mono)">/api/harvest</code> de ce déploiement —
+        les résultats gardés sont écrits dans <code style="font-family:var(--mono)">reddit_signals</code>.
+      </p>
+
+      <form id="harvest-form" class="harvest-form">
+        <div class="field">
+          <label for="f-subreddits">Subreddits <span class="req">*</span></label>
+          <input id="f-subreddits" name="subreddits" type="text" placeholder="startups, SaaS, Entrepreneur" required>
+          <p class="field-hint">Séparés par des virgules, sans le préfixe r/.</p>
+        </div>
+        <div class="field">
+          <label for="f-keywords">Mots-clés</label>
+          <input id="f-keywords" name="keywords" type="text" placeholder="outil de veille, trop cher, je cherche un">
+          <p class="field-hint">Optionnel — laisse vide pour ne filtrer que par subreddit.</p>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="f-days">Fenêtre (jours)</label>
+            <input id="f-days" name="days" type="number" min="1" max="365" value="30">
+          </div>
+          <div class="field">
+            <label for="f-limit">Limite / requête</label>
+            <input id="f-limit" name="limit" type="number" min="1" max="100" value="100">
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary" id="harvest-submit">
+          <span id="harvest-submit-label">Lancer la récolte</span>
+        </button>
+      </form>
+
+      <div id="harvest-result" class="harvest-result" hidden></div>
+    </div>
+  </section>
+
+  <section id="comment">
+    <div class="wrap">
+      <p class="eyebrow">Le problème</p>
+      <h2>Safari bloque reddit.com/search.json</h2>
+      <p class="section-lead">
+        C'est le mur qui a limité LAST30DAYS. Trois problèmes, une seule route pour les résoudre.
+      </p>
+      <div class="problem-grid">
+        <div class="card">
+          <h3>🧱 CORS</h3>
+          <p>Un appel direct depuis le navigateur vers Reddit est bloqué par Safari (et la plupart des navigateurs mobiles).</p>
+        </div>
+        <div class="card">
+          <h3>⏱️ Rate limit</h3>
+          <p>60 requêtes/min en authentifié via OAuth, contre seulement 10 en anonyme.</p>
+        </div>
+        <div class="card">
+          <h3>🔐 Secrets</h3>
+          <p>Le client ID, le secret Reddit et la clé service Supabase restent côté serveur, jamais exposés au client.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="architecture">
+    <div class="wrap">
+      <p class="eyebrow">Architecture</p>
+      <h2>Du navigateur à la base BulkDirect</h2>
+      <p class="section-lead">Cinq étapes, une seule route <code style="font-family:var(--mono)">/api/harvest</code>.</p>
+
+      <div class="flow">
+        <div class="flow-step">
+          <div class="flow-num">1</div>
+          <div>iPhone Safari <span class="desc">→ POST /api/harvest</span></div>
+          <div class="flow-tag">client</div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-num">2</div>
+          <div>OAuth Reddit <span class="desc">client_credentials, jeton mis en cache 24h</span></div>
+          <div class="flow-tag">serveur</div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-num">3</div>
+          <div>GET /r/&lt;sub&gt;/search <span class="desc">sort=top, t=month, limit ≤ 100</span></div>
+          <div class="flow-tag">Reddit API</div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-num">4</div>
+          <div>Normalisation + dédoublonnage <span class="desc">clé = 60 premiers caractères du titre</span></div>
+          <div class="flow-tag">Ingénieur Pipeline</div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-num">5</div>
+          <div>INSERT reddit_signals <span class="desc">upsert on post_id, service role uniquement</span></div>
+          <div class="flow-tag">Supabase</div>
+        </div>
+      </div>
+
+      <div style="margin-top:32px;">
+        <table class="agents">
+          <thead>
+            <tr><th>Agent BulkDirect</th><th>Rôle dans cette route</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="agent-name">Planificateur</td><td>Fournit <code style="font-family:var(--mono)">subreddits[]</code>, <code style="font-family:var(--mono)">keywords[]</code>, <code style="font-family:var(--mono)">days</code></td></tr>
+            <tr><td class="agent-name">Exécuteur Reddit</td><td>C'est cette route — <code style="font-family:var(--mono)">/api/harvest</code></td></tr>
+            <tr><td class="agent-name">Ingénieur Pipeline</td><td>Normalisation et dédoublonnage dans la route</td></tr>
+            <tr><td class="agent-name">QA Reviewer</td><td>Colonne <code style="font-family:var(--mono)">quality</code> calculée à l'insertion</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section id="qualite">
+    <div class="wrap">
+      <p class="eyebrow">Score qualité</p>
+      <h2>Chaque post part à 0,4</h2>
+      <p class="section-lead">Trois bonus indépendants, plafonnés à 1,0 — les posts sous 0,6 sont rejetés avant insertion.</p>
+
+      <div class="quality-row">
+        <div class="quality-bars">
+          <div class="bar-item">
+            <div class="bar-label"><span>Base</span><span>+0.4</span></div>
+            <div class="bar-track"><div class="bar-fill" style="width:40%"></div></div>
+          </div>
+          <div class="bar-item">
+            <div class="bar-label"><span>Titre &gt; 25 caractères</span><span>+0.2</span></div>
+            <div class="bar-track"><div class="bar-fill" style="width:60%"></div></div>
+          </div>
+          <div class="bar-item">
+            <div class="bar-label"><span>Corps &gt; 120 caractères</span><span>+0.2</span></div>
+            <div class="bar-track"><div class="bar-fill" style="width:80%"></div></div>
+          </div>
+          <div class="bar-item">
+            <div class="bar-label"><span>Auteur non supprimé</span><span>+0.2</span></div>
+            <div class="bar-track"><div class="bar-fill" style="width:100%"></div></div>
+          </div>
+        </div>
+        <div>
+          <div class="threshold-note">
+            Seuil de rejet QA : <strong>quality &lt; 0,6</strong>. Descendre ce seuil remplit la base
+            de posts supprimés et de titres d'une ligne.
+          </div>
+          <div class="threshold-note" style="margin-top:12px;">
+            <code style="font-family:var(--mono)">engagement</code> est une colonne générée :
+            <span style="color:var(--text)">score + num_comments × 2</span> — une discussion vaut
+            plus qu'un upvote passif.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="api">
+    <div class="wrap">
+      <p class="eyebrow">Appel</p>
+      <h2>POST /api/harvest</h2>
+      <p class="section-lead">Une requête, plusieurs subreddits et mots-clés, une réponse agrégée.</p>
+
+      <div class="code-tabs">
+        <span class="code-tab">Requête</span>
+      </div>
+      <pre><span class="c">const</span> r = <span class="k">await</span> fetch(<span class="s">'/api/harvest'</span>, {
+  method: <span class="s">'POST'</span>,
+  headers: { <span class="s">'Content-Type'</span>: <span class="s">'application/json'</span> },
+  body: JSON.stringify({
+    subreddits: [<span class="s">'startups'</span>, <span class="s">'SaaS'</span>, <span class="s">'Entrepreneur'</span>],
+    keywords: [<span class="s">'outil de veille'</span>, <span class="s">'trop cher'</span>, <span class="s">'je cherche un'</span>],
+    days: <span class="c">30</span>
+  })
+});</pre>
+
+      <div class="code-tabs" style="margin-top:20px;">
+        <span class="code-tab">Réponse</span>
+      </div>
+      <pre>{
+  <span class="k">"recoltes"</span>: <span class="c">214</span>,
+  <span class="k">"gardes"</span>: <span class="c">187</span>,
+  <span class="k">"rejetes"</span>: <span class="c">27</span>,
+  <span class="k">"subreddits"</span>: [<span class="s">"startups"</span>, <span class="s">"SaaS"</span>, <span class="s">"Entrepreneur"</span>]
+}</pre>
+    </div>
+  </section>
+
+  <section id="limites">
+    <div class="wrap">
+      <p class="eyebrow">À connaître</p>
+      <h2>Limites et pièges courants</h2>
+
+      <table class="limits-table">
+        <thead>
+          <tr><th>Symptôme</th><th>Cause</th><th>Fix</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>OAuth Reddit 401</code></td><td>Secret Reddit périmé</td><td>Régénérer sur reddit.com/prefs/apps</td></tr>
+          <tr><td><code>504</code> au-delà de 5 subreddits</td><td>Timeout Vercel 10s</td><td>Découper en plusieurs appels</td></tr>
+          <tr><td>0 ligne insérée</td><td>RLS bloque l'écriture</td><td>Vérifier <code>SUPABASE_SERVICE_KEY</code></td></tr>
+          <tr><td>Doublons en base</td><td><code>post_id</code> absent</td><td>L'upsert gère — ne pas retirer <code>onConflict</code></td></tr>
+        </tbody>
+      </table>
+
+      <div style="margin-top:32px;">
+        <p class="eyebrow" style="color:var(--bad);">Ne pas faire</p>
+        <ul class="dont-list">
+          <li><span class="x">✕</span> Appeler Reddit depuis le navigateur — c'est le mur CORS, la route existe pour ça.</li>
+          <li><span class="x">✕</span> Dépasser 1 requête/seconde — Reddit coupe l'accès sans avertissement.</li>
+          <li><span class="x">✕</span> Descendre le seuil QA sous 0,6 — la base se remplit de bruit.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; width:100%;">
+    <div class="meta-item">reddit-harvest · <span>proxy BulkDirect</span></div>
+    <div class="meta-item">table <span>reddit_signals</span></div>
+    <div class="meta-item">repo <span>bobsd84000-pixel/-reddit-harvest</span></div>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    const form = document.getElementById('harvest-form');
+    const submitBtn = document.getElementById('harvest-submit');
+    const submitLabel = document.getElementById('harvest-submit-label');
+    const result = document.getElementById('harvest-result');
+
+    function toList(value) {
+      return value
+        .split(',')
+        .map(function (s) { return s.trim(); })
+        .filter(Boolean);
+    }
+
+    function renderStats(data) {
+      result.hidden = false;
+      result.innerHTML =
+        '<div class="result-stats">' +
+          '<div class="stat-card"><div class="stat-value">' + data.recoltes + '</div><div class="stat-label">Récoltés</div></div>' +
+          '<div class="stat-card gardes"><div class="stat-value">' + data.gardes + '</div><div class="stat-label">Gardés</div></div>' +
+          '<div class="stat-card rejetes"><div class="stat-value">' + data.rejetes + '</div><div class="stat-label">Rejetés</div></div>' +
+        '</div>' +
+        '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
+    }
+
+    function renderError(message) {
+      result.hidden = false;
+      result.innerHTML = '<div class="harvest-error">Erreur : ' + message + '</div>';
+    }
+
+    form.addEventListener('submit', async function (e) {
+      e.preventDefault();
+
+      const subreddits = toList(document.getElementById('f-subreddits').value);
+      if (!subreddits.length) {
+        renderError('au moins un subreddit est requis.');
+        return;
+      }
+      const keywords = toList(document.getElementById('f-keywords').value);
+      const days = Number(document.getElementById('f-days').value) || 30;
+      const limit = Number(document.getElementById('f-limit').value) || 100;
+
+      submitBtn.disabled = true;
+      submitLabel.innerHTML = '<span class="spinner"></span>Récolte en cours…';
+      result.hidden = true;
+
+      try {
+        const res = await fetch('/api/harvest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ subreddits: subreddits, keywords: keywords, days: days, limit: limit })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          renderError(data.erreur || ('HTTP ' + res.status));
+        } else {
+          renderStats(data);
+        }
+      } catch (err) {
+        renderError(err.message);
+      } finally {
+        submitBtn.disabled = false;
+        submitLabel.textContent = 'Lancer la récolte';
+      }
+    });
+  })();
+</script>
+
+</body>
+</html>
