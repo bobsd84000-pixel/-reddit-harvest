@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reddit Harvest</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #0d0d0d;
+    color: #eaeaea;
+    padding: 24px 16px 60px;
+  }
+  main { max-width: 480px; margin: 0 auto; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  p.sub { color: #999; font-size: 13px; margin-top: 0; margin-bottom: 24px; }
+  label { display: block; font-size: 13px; color: #bbb; margin: 16px 0 6px; }
+  input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid #333;
+    background: #1a1a1a;
+    color: #eaeaea;
+    font-size: 15px;
+  }
+  input:focus { outline: none; border-color: #ff6b35; }
+  button {
+    width: 100%;
+    margin-top: 24px;
+    padding: 12px;
+    border-radius: 8px;
+    border: none;
+    background: #ff6b35;
+    color: #0d0d0d;
+    font-weight: 600;
+    font-size: 15px;
+  }
+  button:disabled { opacity: 0.6; }
+  #resultat {
+    margin-top: 20px;
+    padding: 14px;
+    border-radius: 8px;
+    background: #151515;
+    border: 1px solid #262626;
+    font-size: 13px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    display: none;
+  }
+  #resultat.visible { display: block; }
+  #resultat.erreur { border-color: #a33; color: #f88; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Reddit Harvest</h1>
+  <p class="sub">Récolte des posts Reddit et les envoie dans Supabase.</p>
+
+  <label for="subreddits">Subreddits (séparés par virgule)</label>
+  <input id="subreddits" placeholder="startups, SaaS, Entrepreneur">
+
+  <label for="keywords">Mots-clés (séparés par virgule, optionnel)</label>
+  <input id="keywords" placeholder="outil de veille, trop cher">
+
+  <label for="days">Fenêtre (jours)</label>
+  <input id="days" type="number" value="30" min="1" max="365">
+
+  <button id="lancer">Lancer la récolte</button>
+
+  <div id="resultat"></div>
+</main>
+
+<script>
+  const bouton = document.getElementById('lancer');
+  const resultat = document.getElementById('resultat');
+
+  bouton.addEventListener('click', async () => {
+    const subreddits = document.getElementById('subreddits').value
+      .split(',').map(s => s.trim()).filter(Boolean);
+    const keywords = document.getElementById('keywords').value
+      .split(',').map(s => s.trim()).filter(Boolean);
+    const days = Number(document.getElementById('days').value) || 30;
+
+    if (!subreddits.length) {
+      resultat.textContent = 'Indique au moins un subreddit.';
+      resultat.className = 'visible erreur';
+      return;
+    }
+
+    bouton.disabled = true;
+    bouton.textContent = 'Récolte en cours…';
+    resultat.className = 'visible';
+    resultat.textContent = '…';
+
+    try {
+      const r = await fetch('/api/harvest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subreddits, keywords, days })
+      });
+      const data = await r.json();
+      resultat.className = r.ok ? 'visible' : 'visible erreur';
+      resultat.textContent = JSON.stringify(data, null, 2);
+    } catch (e) {
+      resultat.className = 'visible erreur';
+      resultat.textContent = 'Erreur réseau : ' + e.message;
+    } finally {
+      bouton.disabled = false;
+      bouton.textContent = 'Lancer la récolte';
+    }
+  });
+</script>
+</body>
+</html>
